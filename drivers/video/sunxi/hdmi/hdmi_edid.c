@@ -111,7 +111,7 @@ Parse_DTD_Block(__u8 *pbuf)
 
 	pixels_total = HT * VT;
 
-	if ((pbuf[0] == 0) && (pbuf[1] == 0) && (pbuf[2] == 0))
+	if ((pbuf[0] == 0) && (pbuf[1] == 0))
 		return 0;
 
 	if (pixels_total == 0)
@@ -168,6 +168,7 @@ Parse_DTD_Block(__u8 *pbuf)
 	if (Device_Support_VIC[HDMI_EDID] || (sizex & 7))
 		return 0;
 
+	video_timing[video_timing_edid].VIC = HDMI_EDID;
 	video_timing[video_timing_edid].PCLK = pclk;
 	video_timing[video_timing_edid].AVI_PR = 0;
 	video_timing[video_timing_edid].INPUTX = sizex;
@@ -426,11 +427,12 @@ static int get_edid_block(int block, unsigned char *buf)
 /*
  * collect the EDID ucdata of segment 0
  */
+#define EDID_MAX_BLOCKS		5
 __s32 ParseEDID(void)
 {
 	__u8 BlockCount;
 	__u32 i;
-	unsigned char *EDID_Buf = kmalloc(EDID_LENGTH*4, GFP_KERNEL);
+	unsigned char *EDID_Buf = kmalloc(EDID_LENGTH*EDID_MAX_BLOCKS, GFP_KERNEL);
 	if (!EDID_Buf)
 		return -ENOMEM;
 
@@ -455,28 +457,26 @@ __s32 ParseEDID(void)
 		goto ret;
 
 	Parse_DTD_Block(EDID_Buf + 0x36);
-
 	Parse_DTD_Block(EDID_Buf + 0x48);
+	Parse_DTD_Block(EDID_Buf + 0x5A);
+	Parse_DTD_Block(EDID_Buf + 0x6C);
 
 	BlockCount = EDID_Buf[0x7E] + 1;
-	if (BlockCount > 5)
-		BlockCount = 5;
+	if (BlockCount > EDID_MAX_BLOCKS)
+		BlockCount = EDID_MAX_BLOCKS;
 
 	for (i = 1; i < BlockCount; i++) {
 		if (get_edid_block(i, EDID_Buf) != 0) {
 			BlockCount = i;
 			break;
 		}
+
+		if (EDID_Buf[0x80 * i + 0] == 2) {
+			ParseEDID_CEA861_extension_block(i, EDID_Buf);
+		}
 	}
 
 	hdmi_edid_received(EDID_Buf, BlockCount);
-
-	for (i = 1; i < BlockCount; i++) {
-		if (EDID_Buf[0x80 * i + 0] == 2) {
-			if (!ParseEDID_CEA861_extension_block(i, EDID_Buf))
-				goto ret;
-		}
-	}
 
 ret:
 	kfree(EDID_Buf);
