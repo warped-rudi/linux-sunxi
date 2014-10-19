@@ -1087,10 +1087,12 @@ error_exit:
 }
 #endif
 
+#ifdef CONFIG_USB_SW_SUNXI_USB
 #include <plat/sys_config.h>
 extern int sw_usb_disable_hcd(__u32 usbc_no);
 extern int sw_usb_enable_hcd(__u32 usbc_no);
 static int usb_wifi_host = 2;
+#endif
 
 extern char* ifname;
 /*
@@ -1431,6 +1433,7 @@ static int __init rtw_drv_entry(void)
 
 	RT_TRACE(_module_hci_intfs_c_,_drv_err_,("+rtw_drv_entry\n"));
 	
+#ifdef CONFIG_USB_SW_SUNXI_USB
 	/* ----------get usb_wifi_usbc_num------------- */
 	ret = script_parser_fetch("usb_wifi_para", "usb_wifi_usbc_num", (int *)&usb_wifi_host, 64);
 	if(ret != 0){
@@ -1439,7 +1442,6 @@ static int __init rtw_drv_entry(void)
 		return ret;
 	}
 
-#ifdef CONFIG_USB_SW_SUNXI_USB
 	MSG_8192C("sw_usb_enable_hcd: usbc_num = %d\n", usb_wifi_host);
 	sw_usb_enable_hcd(usb_wifi_host);
 #endif
