@@ -236,6 +236,17 @@ config IR_STREAMZAP
 	   To compile this driver as a module, choose M here: the
 	   module will be called streamzap.
 
+config IR_SUNXI_CIR
+        tristate "SUNXI Infrared Receiver"
+        depends on (ARCH_SUN3I || ARCH_SUN4I || ARCH_SUN5I || ARCH_SUN7I)
+        depends on RC_CORE
+        ---help---
+           Say Y here to enable support for integrated infrared receiver
+           made by Allwinner.
+
+           To compile this driver as a module, choose M here: the
+           module will be called sunxi-cir.
+
 config IR_WINBOND_CIR
 	tristate "Winbond IR remote control"
 	depends on X86 && PNP
