@@ -217,15 +217,34 @@ __s32 Hpd_Check(void)
 
 __s32 get_video_info(__s32 vic)
 {
-	__s32 i, count;
-	count = sizeof(video_timing);
-	for (i = 0; i < count; i++)
+	__s32 i;
+
+	for (i = 0; i < ARRAY_SIZE(video_timing); i++)
 		if (vic == video_timing[i].VIC)
 			return i;
 
 	__wrn("can't find the video timing parameters\n");
 	return -1;
 }
+
+__s32 vic_from_video_timing(const struct __disp_video_timing *mode)
+{
+	__s32 i;
+	struct __disp_video_timing temp_mode;
+	
+	memcpy(&temp_mode, mode, sizeof(temp_mode));
+
+	for (i = 0; i < ARRAY_SIZE(video_timing); i++)
+	{
+	      temp_mode.VIC = video_timing[i].VIC;
+	      
+	      if (memcmp(&temp_mode, &video_timing[i], sizeof(temp_mode)) == 0)
+			return video_timing[i].VIC;
+	}
+	
+	return HDMI_EDID;
+}
+
 
 static __s32 get_audio_info(__s32 sample_rate)
 {
@@ -301,6 +320,9 @@ __s32 video_config(__s32 vic)
 		return 0;
 	else
 		video_mode = vic;
+	
+	if (vic == HDMI_EDID)
+		vic = vic_from_video_timing(&video_timing[video_timing_edid]);
 
 	if ((vic == HDMI1440_480I) || (vic == HDMI1440_576I))
 		dw = 1; /* Double Width */
