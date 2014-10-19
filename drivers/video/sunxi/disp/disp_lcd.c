@@ -1840,8 +1840,12 @@ __s32 BSP_disp_get_videomode(__u32 sel, struct fb_videomode *videomode)
 	videomode->xres = BSP_disp_get_screen_width(sel);
 	videomode->yres = BSP_disp_get_screen_height(sel);
 
-	if (interlaced)
+	if (interlaced) {
 		videomode->vmode = FB_VMODE_INTERLACED;
+		videomode->lower_margin *= 2;
+		videomode->upper_margin *= 2;
+		videomode->vsync_len *= 2;
+	}
 
 	if (vsync)
 		videomode->sync = FB_SYNC_VERT_HIGH_ACT;

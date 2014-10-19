@@ -226,8 +226,17 @@ void videomode_to_video_timing(struct __disp_video_timing *video_timing,
 	video_timing->VBP = mode->upper_margin + mode->vsync_len;
 	video_timing->VFP = mode->lower_margin;
 	video_timing->VPSW = mode->vsync_len;
-	if (mode->vmode & FB_VMODE_INTERLACED)
+
+	if (mode->vmode & FB_VMODE_INTERLACED) {
 		video_timing->I = true;
+
+		video_timing->VBP /= 2;
+		video_timing->VFP /= 2;
+		video_timing->VPSW /= 2;
+
+		if ((video_timing->HT * (video_timing->VT + 1) * (mode->refresh/2)) == video_timing->PCLK)
+			video_timing->VT++;
+	}
 
 	if (mode->sync & FB_SYNC_HOR_HIGH_ACT)
 		video_timing->HSYNC = true;
@@ -272,7 +281,11 @@ __s32 BSP_disp_set_videomode(__u32 sel, const struct fb_videomode *mode)
 		goto failure;
 
 	gdisp.screen[sel].hdmi_mode = DISP_TV_MODE_EDID;
-	gdisp.screen[sel].b_out_interlace = new_video_timing->I;
+
+	if (gdisp.screen[sel].b_out_interlace != new_video_timing->I) {
+	      gdisp.screen[sel].b_out_interlace = new_video_timing->I;
+	      Disp_set_out_interlace(sel);
+	}
 
 	kfree(old_video_timing);
 	kfree(new_video_timing);
