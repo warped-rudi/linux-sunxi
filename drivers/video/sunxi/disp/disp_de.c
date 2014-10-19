@@ -224,7 +224,7 @@ static __s32 BSP_disp_set_output_csc_sun4i(__u32 sel,
 		__s32 ret = 0;
 		__s32 value = 0;
 
-		out_color_range = DISP_COLOR_RANGE_16_255;
+		out_color_range = DISP_COLOR_RANGE_16_235;
 #ifdef YUV_COLORSPACE /* Fix me */
 		out_csc = DE_YUV_HDMI;
 #endif
