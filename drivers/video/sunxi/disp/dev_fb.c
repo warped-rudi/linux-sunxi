@@ -90,6 +90,15 @@ static u32 tv_mode_to_frame_rate(u32 mode)
 	}
 }
 
+static int check_pll_freq(const struct fb_videomode *mode)
+{
+	int dummy;
+	struct __disp_video_timing timing;
+
+	videomode_to_video_timing(&timing, mode);
+	return disp_get_pll_freq(timing.PCLK, &dummy, &dummy);
+}
+
 static int parse_output_mode(char *mode, int type, int fallback, __bool *edid)
 {
 	u32 i, width, height, interlace, frame_rate;
@@ -1081,8 +1090,9 @@ static int Fb_pan_display(struct fb_var_screeninfo *var, struct fb_info *info)
  */
 static int Fb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
+	struct fb_videomode mode;
 	__disp_pixel_fmt_t fmt;
-	int dummy, sel;
+	int sel;
 	__inf("Fb_check_var: %dx%d %dbits\n", var->xres, var->yres,
 	      var->bits_per_pixel);
 
@@ -1095,9 +1105,8 @@ static int Fb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 			continue;
 
 		/* Check that pll is found */
-		if (disp_get_pll_freq(
-			fb_videomode_pixclock_to_hdmi_pclk(var->pixclock),
-				&dummy, &dummy))
+		fb_var_to_videomode(&mode, var);
+		if (check_pll_freq(&mode))
 			return -EINVAL;
 	}
 
@@ -1168,7 +1177,13 @@ static int Fb_set_par(struct fb_info *info)
 				if (!fb_mode_is_equal(&new_mode, &old_mode)) {
 					mode_changed = (BSP_disp_set_videomode(
 							sel, &new_mode) == 0);
+				}
 
+				if (mode_changed) {
+					struct fb_event event;
+					event.info = info;
+					event.data = &new_mode;
+					fb_notifier_call_chain(FB_EVENT_MODE_CHANGE, &event);
 				}
 			}
 
@@ -1693,11 +1708,12 @@ int disp_check_fbmem(int sel, int width, int height)
 }
 EXPORT_SYMBOL(disp_check_fbmem);
 
-void hdmi_edid_received(unsigned char *edid, int block_count)
+const struct fb_videomode *hdmi_edid_received(unsigned char *edid, int block_count, __u8 *vic_support)
 {
 	struct fb_event event;
 	struct fb_modelist *m, *n;
-	int dummy;
+	struct fb_videomode currMode, *dflt = NULL;
+	int i, vic;
 	__u32 sel = 0;
 	__u32 block = 0;
 	LIST_HEAD(old_modelist);
@@ -1717,8 +1733,14 @@ void hdmi_edid_received(unsigned char *edid, int block_count)
 			console_lock();
 		}
 
+		memset(&currMode, 0, sizeof(currMode));
 		for (block = 0; block < block_count; block++) {
 			if (block == 0) {
+				if (fbi->mode) {
+					memcpy(&currMode, fbi->mode, sizeof(currMode));
+					fbi->mode = NULL;
+				}
+
 				if (fbi->monspecs.modedb != NULL) {
 					fb_destroy_modedb(fbi->monspecs.modedb);
 					fbi->monspecs.modedb = NULL;
@@ -1752,11 +1774,8 @@ void hdmi_edid_received(unsigned char *edid, int block_count)
 
 		/* Filter out modes which we cannot do */
 		list_for_each_entry_safe(m, n, &fbi->modelist, list) {
-			if (disp_get_pll_freq(
-				fb_videomode_pixclock_to_hdmi_pclk(
-				    m->mode.pixclock), &dummy, &dummy) != 0 ||
-			    disp_check_fbmem(sel,
-					   m->mode.xres, m->mode.yres) != 0) {
+			if (check_pll_freq(&m->mode) != 0 ||
+			    disp_check_fbmem(sel, m->mode.xres, m->mode.yres) != 0) {
 				list_del(&m->list);
 				kfree(m);
 			}
@@ -1778,6 +1797,36 @@ void hdmi_edid_received(unsigned char *edid, int block_count)
 		}
 
 		/*
+		 * Determine default mode and vic support
+		 */
+		list_for_each_entry(m, &fbi->modelist, list) {
+			for (vic = 0, i = 1; i < ARRAY_SIZE(cea_modes); i++) {
+				if (cea_modes[i].xres == m->mode.xres &&
+				    cea_modes[i].yres == m->mode.yres &&
+				    cea_modes[i].vmode == m->mode.vmode &&
+				    cea_modes[i].refresh == m->mode.refresh) {
+					vic_support[i] = 1;
+					vic = i;
+					break;
+				}
+			}
+
+			if (!dflt && (m->mode.flag & FB_MODE_IS_FIRST))
+				dflt = &m->mode;
+
+			if (!fbi->mode && fb_mode_is_equal(&m->mode, &currMode))
+				fbi->mode = &m->mode;
+
+			pr_info("Supported mode: VIC:%d %ux%u%c-%u%s\n",
+				vic, m->mode.xres, m->mode.yres, 
+				(m->mode.vmode & FB_VMODE_INTERLACED) ? 'i' : 'p', 
+				m->mode.refresh, (&m->mode == dflt) ?  " (*)" : "");
+		}
+
+		if (!fbi->mode)
+			fbi->mode = dflt;
+
+		/*
 		 * Tell framebuffer users that modelist was replaced. This is
 		 * to avoid use of old removed modes and to avoid panics.
 		 */
@@ -1794,6 +1843,8 @@ void hdmi_edid_received(unsigned char *edid, int block_count)
 		WARN_ON(err);
 	}
 	mutex_unlock(&g_fbi_mutex);
+	
+	return dflt;
 }
 EXPORT_SYMBOL(hdmi_edid_received);
 

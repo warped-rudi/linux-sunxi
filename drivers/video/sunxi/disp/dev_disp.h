@@ -38,7 +38,8 @@ int disp_suspend(int clk, int status);
 int disp_resume(int clk, int status);
 
 int disp_check_fbmem(int sel, int width, int height);
-void hdmi_edid_received(unsigned char *edid, int block);
+const struct fb_videomode *hdmi_edid_received(unsigned char *edid, int block, __u8 *vic_support);
+
 __s32 Fb_Init(__u32 from);
 __s32 DRV_lcd_open(__u32 sel);
 __s32 DRV_lcd_close(__u32 sel);
