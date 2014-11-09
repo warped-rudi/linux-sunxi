@@ -19,12 +19,18 @@
 
 #include <sound/pcm.h>
 #include <linux/fb.h>
+#include <linux/crc32.h>
 #include "hdmi_core.h"
 #include "../disp/dev_disp.h"
 #include "../disp/disp_hdmi.h"
 #include "../disp/sunxi_disp_regs.h"
 #include "hdmi_cec.h"
 
+#define EDID_BLOCK_LENGTH	0x80
+#define EDID_MAX_BLOCKS		2
+
+#define DDC_ADDR 		0x50
+#define DDC_RETRIES 		3
 
 /*
  * ParseEDID()
@@ -193,13 +199,10 @@ static __s32 ParseEDID_CEA861_extension_block(__u32 i, __u8 *EDID_Buf)
 	return 1;
 }
 
-#define DDC_ADDR 0x50
-#define EDID_LENGTH 0x80
-#define TRIES 3
 static int probe_ddc_edid(struct i2c_adapter *adapter,
 		int block, unsigned char *buf)
 {
-	unsigned char start = block * EDID_LENGTH;
+	unsigned char start = block * EDID_BLOCK_LENGTH;
 	struct i2c_msg msgs[] = {
 		{
 			.addr	= DDC_ADDR,
@@ -209,16 +212,14 @@ static int probe_ddc_edid(struct i2c_adapter *adapter,
 		}, {
 			.addr	= DDC_ADDR,
 			.flags	= I2C_M_RD,
-			.len	= EDID_LENGTH,
+			.len	= EDID_BLOCK_LENGTH,
 			.buf	= buf + start,
 		}
 	};
 
-	if (!buf) {
-		dev_warn(&adapter->dev, "unable to allocate memory for EDID "
-			 "block.\n");
+	/* !!! only 1 byte I2C address length used */
+	if (block >= 2)
 		return -EIO;
-	}
 
 	if (i2c_transfer(adapter, msgs, 2) == 2)
 		return 0;
@@ -230,47 +231,39 @@ static int get_edid_block(int block, unsigned char *buf)
 {
 	int i;
 
-	for (i = 1; i <= TRIES; i++) {
+	for (i = 1; i <= DDC_RETRIES; i++) {
 		if (probe_ddc_edid(&sunxi_hdmi_i2c_adapter, block, buf)) {
 			dev_warn(&sunxi_hdmi_i2c_adapter.dev,
 				 "unable to read EDID block %d, try %d/%d\n",
-				 block, i, TRIES);
+				 block, i, DDC_RETRIES);
 			continue;
 		}
 		if (EDID_CheckSum(block, buf) != 0) {
 			dev_warn(&sunxi_hdmi_i2c_adapter.dev,
 				 "EDID block %d checksum error, try %d/%d\n",
-				 block, i, TRIES);
+				 block, i, DDC_RETRIES);
 			continue;
 		}
 		break;
 	}
-	return (i <= TRIES) ? 0 : -EIO;
+	return (i <= DDC_RETRIES) ? 0 : -EIO;
 }
 
 /*
  * collect the EDID ucdata of segment 0
  */
-#define EDID_MAX_BLOCKS		5
 __s32 ParseEDID(void)
 {
 	__u8 BlockCount;
-	__u32 i;
+	__u32 i, crc_val;
+	static __u32 EDID_crc = 0;
 	const struct fb_videomode *dfltMode;
-	unsigned char *EDID_Buf = kmalloc(EDID_LENGTH*EDID_MAX_BLOCKS, GFP_KERNEL);
+	unsigned char *EDID_Buf = kmalloc(EDID_BLOCK_LENGTH * EDID_MAX_BLOCKS, GFP_KERNEL);
+
 	if (!EDID_Buf)
 		return -ENOMEM;
 
-	pr_info("ParseEDID\n");
-
-	if (video_mode == HDMI_EDID) {
-		/* HDMI_DEVICE_SUPPORT_VIC_SIZE - 1 so as to not overwrite
-		   the currently in use timings with a new preferred mode! */
-		memset(Device_Support_VIC, 0,
-		       HDMI_DEVICE_SUPPORT_VIC_SIZE - 1);
-	} else {
-		memset(Device_Support_VIC, 0, HDMI_DEVICE_SUPPORT_VIC_SIZE);
-	}
+	__inf("ParseEDID\n");
 
 	if (get_edid_block(0, EDID_Buf) != 0)
 		goto ret;
@@ -290,17 +283,36 @@ __s32 ParseEDID(void)
 			BlockCount = i;
 			break;
 		}
-
-		if (EDID_Buf[0x80 * i + 0] == 2) {
-			ParseEDID_CEA861_extension_block(i, EDID_Buf);
-		}
 	}
 
-	dfltMode = hdmi_edid_received(EDID_Buf, BlockCount, Device_Support_VIC);
+	crc_val = crc32(-1U, EDID_Buf, EDID_BLOCK_LENGTH * BlockCount);
 
-	if (!Device_Support_VIC[HDMI_EDID] && dfltMode) {
-		videomode_to_video_timing(&video_timing[video_timing_edid], dfltMode);
-		Device_Support_VIC[HDMI_EDID] = 1;
+	if (crc_val != EDID_crc || !Device_Support_VIC[HDMI_EDID]) {
+		EDID_crc = crc_val;
+
+		pr_info("ParseEDID: New EDID received.\n");
+
+		if (video_mode == HDMI_EDID) {
+			/* HDMI_DEVICE_SUPPORT_VIC_SIZE - 1 so as to not overwrite
+			  the currently in use timings with a new preferred mode! */
+			memset(Device_Support_VIC, 0, HDMI_DEVICE_SUPPORT_VIC_SIZE - 1);
+		} else {
+			memset(Device_Support_VIC, 0, HDMI_DEVICE_SUPPORT_VIC_SIZE);
+		}
+
+		for (i = 1; i < BlockCount; i++) {
+			if (EDID_Buf[EDID_BLOCK_LENGTH * i + 0] == 2)
+				ParseEDID_CEA861_extension_block(i, EDID_Buf);
+		}
+
+		dfltMode = hdmi_edid_received(EDID_Buf, BlockCount, Device_Support_VIC);
+
+		if (dfltMode) {
+			videomode_to_video_timing(&video_timing[video_timing_edid], dfltMode);
+			Device_Support_VIC[HDMI_EDID] = 1;
+		}
+	} else {
+		pr_info("ParseEDID: EDID already known.\n");
 	}
 
 ret:
