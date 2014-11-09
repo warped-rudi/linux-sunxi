@@ -1713,7 +1713,7 @@ const struct fb_videomode *hdmi_edid_received(unsigned char *edid, int block_cou
 	struct fb_event event;
 	struct fb_modelist *m, *n;
 	struct fb_videomode currMode, *dflt = NULL;
-	int i, vic;
+	int vic;
 	__u32 sel = 0;
 	__u32 block = 0;
 	LIST_HEAD(old_modelist);
@@ -1800,16 +1800,10 @@ const struct fb_videomode *hdmi_edid_received(unsigned char *edid, int block_cou
 		 * Determine default mode and vic support
 		 */
 		list_for_each_entry(m, &fbi->modelist, list) {
-			for (vic = 0, i = 1; i < ARRAY_SIZE(cea_modes); i++) {
-				if (cea_modes[i].xres == m->mode.xres &&
-				    cea_modes[i].yres == m->mode.yres &&
-				    cea_modes[i].vmode == m->mode.vmode &&
-				    cea_modes[i].refresh == m->mode.refresh) {
-					vic_support[i] = 1;
-					vic = i;
-					break;
-				}
-			}
+			vic = vic_from_videomode(&m->mode, FB_VMODE_MASK);
+
+			if (vic)
+				vic_support[vic] = 1;
 
 			if (!dflt && (m->mode.flag & FB_MODE_IS_FIRST))
 				dflt = &m->mode;

@@ -206,6 +206,25 @@ static __u32 fb_videomode_pixclock_to_hdmi_pclk(__u32 pixclock)
 	return pclk * 50000;
 }
 
+int vic_from_videomode(const struct fb_videomode *mode, unsigned vmode_mask)
+{
+	int vic;
+	unsigned rfsh_limit;
+
+	for (vic = 1; vic < ARRAY_SIZE(cea_modes); vic++) {
+		/* allow 59 to match 60 and 23 to match 24 */
+		rfsh_limit = (cea_modes[vic].refresh == 24 || cea_modes[vic].refresh == 60) ? 1 : 0;
+
+		if (cea_modes[vic].xres == mode->xres && cea_modes[vic].yres == mode->yres &&
+		    (unsigned)(cea_modes[vic].refresh - mode->refresh) <= rfsh_limit &&
+		    ((cea_modes[vic].vmode ^ mode->vmode) & vmode_mask) == 0) {
+			return vic;
+		}
+	}
+
+	return 0;
+}
+
 void videomode_to_video_timing(struct __disp_video_timing *video_timing,
 		const struct fb_videomode *mode)
 {
@@ -214,15 +233,14 @@ void videomode_to_video_timing(struct __disp_video_timing *video_timing,
 		int pclk;
 	} pclk_override[] = {
 		/*  VIC        PCLK  AVI_PR INPUTX INPUTY HT   HBP  HFP  HPSW  VT  VBP VFP VPSW I  HS VS   override */
-		{ { 511, 146250000, 0, 1680, 1050, 2240, 456, 104, 176, 1089, 36,  3, 6,  0, 0, 1 }, 146000000 },
-		{ { 511,  83500000, 0, 1280,  800, 1680, 328,  72, 128,  831, 28,  3, 6,  0, 0, 1 },  83250000 },
-		{ { 511,  83500000, 0, 1280,  800, 1680, 328,  72, 128,  831, 21, 10, 6,  0, 1, 1 },  83250000 },
+		{ { 0, 146250000, 0, 1680, 1050, 2240, 456, 104, 176, 1089, 36,  3, 6,  0, 0, 1 }, 146000000 },
+		{ { 0,  83500000, 0, 1280,  800, 1680, 328,  72, 128,  831, 28,  3, 6,  0, 0, 1 },  83250000 },
+		{ { 0,  83500000, 0, 1280,  800, 1680, 328,  72, 128,  831, 21, 10, 6,  0, 1, 1 },  83250000 },
 	};
 
 	int i;
 
 	memset(video_timing, 0, sizeof(struct __disp_video_timing));
-	video_timing->VIC = 511;
 	video_timing->PCLK =
 		fb_videomode_pixclock_to_hdmi_pclk(mode->pixclock);
 	video_timing->AVI_PR = 0;
@@ -248,6 +266,9 @@ void videomode_to_video_timing(struct __disp_video_timing *video_timing,
 
 		if ((video_timing->HT * (video_timing->VT + 1) * (mode->refresh/2)) == video_timing->PCLK)
 			video_timing->VT++;
+
+		if (mode->xres == 720 && (mode->yres == 576 || mode->yres == 480))
+			video_timing->AVI_PR = 1;
 	}
 
 	if (mode->sync & FB_SYNC_HOR_HIGH_ACT)
@@ -262,6 +283,8 @@ void videomode_to_video_timing(struct __disp_video_timing *video_timing,
 			break;
 		}
 	}
+
+	video_timing->VIC = vic_from_videomode(mode, FB_VMODE_MASK);
 }
 
 __s32 BSP_disp_set_videomode(__u32 sel, const struct fb_videomode *mode)
