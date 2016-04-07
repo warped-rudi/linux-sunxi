@@ -82,8 +82,8 @@ typedef struct audio_timing {
 
 	__s32 CTS;
 	__s32 ACR_N;
-	__s32 CH_STATUS0;
-	__s32 CH_STATUS1;
+	__u32 CH_STATUS0;
+	__u32 CH_STATUS1;
 	__u8  sample_bit;
 
 } HDMI_AUDIO_INFO;
@@ -96,7 +96,7 @@ __s32 hdmi_main_task_loop(void);
 __s32 Hpd_Check(void);
 __s32 ParseEDID(void);
 __s32 video_config(__s32 vic);
-__s32 audio_config(void);
+__s32 audio_config(__bool ch_status_only);
 __s32 get_video_info(__s32 vic);
 
 extern __u32 hdmi_pll; /* 0: video pll 0; 1: video pll 1 */

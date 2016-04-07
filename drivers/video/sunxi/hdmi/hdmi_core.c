@@ -192,7 +192,7 @@ __s32 hdmi_main_task_loop(void)
 		hdmi_state = HDMI_State_Audio_config;
 
 	case HDMI_State_Audio_config:
-		audio_config();
+		audio_config(false);
 		hdmi_state = HDMI_State_Playback;
 
 	case HDMI_State_Playback:
@@ -243,38 +243,24 @@ static __s32 get_audio_info(__s32 sample_rate)
 	switch (sample_rate) {
 	case 32000:
 		audio_info.ACR_N = 4096;
-		audio_info.CH_STATUS0 = (3 << 24);
-		audio_info.CH_STATUS1 = 0x0000000b;
 		break;
 	case 44100:
 		audio_info.ACR_N = 6272;
-		audio_info.CH_STATUS0 = (0 << 24);
-		audio_info.CH_STATUS1 = 0x0000000b;
 		break;
 	case 48000:
 		audio_info.ACR_N = 6144;
-		audio_info.CH_STATUS0 = (2 << 24);
-		audio_info.CH_STATUS1 = 0x0000000b;
 		break;
 	case 88200:
 		audio_info.ACR_N = 12544;
-		audio_info.CH_STATUS0 = (8 << 24);
-		audio_info.CH_STATUS1 = 0x0000000b;
 		break;
 	case 96000:
 		audio_info.ACR_N = 12288;
-		audio_info.CH_STATUS0 = (10 << 24);
-		audio_info.CH_STATUS1 = 0x0000000b;
 		break;
 	case 176400:
 		audio_info.ACR_N = 25088;
-		audio_info.CH_STATUS0 = (12 << 24);
-		audio_info.CH_STATUS1 = 0x0000000b;
 		break;
 	case 192000:
 		audio_info.ACR_N = 24576;
-		audio_info.CH_STATUS0 = (14 << 24);
-		audio_info.CH_STATUS1 = 0x0000000b;
 		break;
 	default:
 		__wrn("un-support sample_rate,value=%d\n", sample_rate);
@@ -559,11 +545,17 @@ __s32 video_config(__s32 vic)
 	return 0;
 }
 
-__s32 audio_config(void)
+__s32 audio_config(__bool ch_status_only)
 {
 	__s32 i;
 
 	__inf("audio_config, sample_rate:%d\n", audio_info.sample_rate);
+
+	if (ch_status_only) {
+		writel(audio_info.CH_STATUS0, HDMI_AUDIO_CH_STATUS0);
+		writel(audio_info.CH_STATUS1, HDMI_AUDIO_CH_STATUS1);
+		return 0;
+	}
 
 	writel(0x00000000, HDMI_AUDIO_CTRL);
 	writel(0x40000000, HDMI_AUDIO_CTRL);

@@ -216,7 +216,8 @@ static __s32 Hdmi_Audio_Enable(__u8 mode, __u8 channel)
 
 static __s32 Hdmi_Set_Audio_Para(hdmi_audio_t *audio_para)
 {
-	int change = 0;
+	__u8 change = 0;
+	__u32 cs0, cs1;
 
 	__inf("[Hdmi_Set_Audio_Para]\n");
 
@@ -241,15 +242,28 @@ static __s32 Hdmi_Set_Audio_Para(hdmi_audio_t *audio_para)
 		      audio_info.channel_num);
 	}
 
+	cs0 = audio_para->ch_stat[0] | (audio_para->ch_stat[1] << 8) |
+	      (audio_para->ch_stat[2] << 16) | (audio_para->ch_stat[3] << 24);
+	cs1 = audio_para->ch_stat[4] | (audio_para->ch_stat[5] << 8);
+	if (cs0 != audio_info.CH_STATUS0 || cs1 != audio_info.CH_STATUS1) {
+		change |= 2;
+	}
+
 	if (change) {
 		mutex_lock(&HDMI_mutex);
 	  
 		audio_info.sample_bit = audio_para->sample_bit;
 		audio_info.sample_rate = audio_para->sample_rate;
 		audio_info.channel_num = audio_para->channel_num;
+		audio_info.CH_STATUS0 = cs0;
+		audio_info.CH_STATUS1 = cs1;
 	  
-		if (hdmi_state > HDMI_State_Audio_config)
-			hdmi_state = HDMI_State_Audio_config;
+		if (hdmi_state > HDMI_State_Audio_config) {
+			if (change & 1)
+				hdmi_state = HDMI_State_Audio_config;
+			if (change & 2)
+				audio_config(true);
+		}
 
 		mutex_unlock(&HDMI_mutex);
 	}
